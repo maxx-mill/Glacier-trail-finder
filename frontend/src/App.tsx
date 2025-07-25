@@ -3,7 +3,6 @@ import { MapContainer, TileLayer, Polyline, Popup, useMap } from 'react-leaflet'
 import L, { control } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import axios from 'axios';
-import { createPortal } from 'react-dom';
 import { BrowserRouter as Router, Routes, Route, useParams, useNavigate } from 'react-router-dom';
 import { useState as useReactState } from 'react';
 

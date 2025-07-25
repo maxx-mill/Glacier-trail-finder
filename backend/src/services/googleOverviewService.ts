@@ -7,7 +7,8 @@ export async function fetchGoogleOverview(query: string): Promise<string | null>
   try {
     const url = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_API_KEY}&cx=${GOOGLE_CX}&q=${encodeURIComponent(query)}`;
     const response = await axios.get(url);
-    const items = response.data.items;
+    const data = response.data as any;
+    const items = data.items;
     if (items && items.length > 0) {
       // Return the snippet from the first result
       return items[0].snippet;
@@ -23,7 +24,8 @@ export async function fetchTrailImages(query: string): Promise<string[]> {
   try {
     const url = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_API_KEY}&cx=${GOOGLE_CX}&q=${encodeURIComponent(query)}&searchType=image&num=6`;
     const response = await axios.get(url);
-    const items = response.data.items;
+    const data = response.data as any;
+    const items = data.items;
     if (items && items.length > 0) {
       // Return the image links
       return items.map((item: any) => item.link);
