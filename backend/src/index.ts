@@ -9,7 +9,12 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 3001;
 
-app.use(cors());
+const allowedOrigins = ['https://glacier-trail-finder-3.onrender.com'];
+
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true, // if you use cookies/auth
+}));
 app.use(bodyParser.json());
 
 // Get all trails (for Glacier National Park)

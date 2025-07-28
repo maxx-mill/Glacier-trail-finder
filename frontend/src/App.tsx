@@ -279,7 +279,7 @@ function AppRoutes() {
   const navigate = useNavigate();
   const params = useParams();
   const [isOffline, setIsOffline] = useReactState(!navigator.onLine);
-  const API_URL = process.env.REACT_APP_API_URL || '';
+  const API_URL = process.env.REACT_APP_API_BASE_URL || '';
 
   useEffect(() => {
     const handleOnline = () => setIsOffline(false);
