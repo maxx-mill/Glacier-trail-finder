@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, Polyline, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Polyline, Popup, useMap, Rectangle } from 'react-leaflet';
 import L, { control } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import axios from 'axios';
+// Remove: import axios from 'axios';
 import { BrowserRouter as Router, Routes, Route, useParams, useNavigate } from 'react-router-dom';
 import { useState as useReactState } from 'react';
+import { FaRoad, FaRegClock, FaTree, FaBicycle, FaLock, FaExternalLinkAlt, FaDirections } from 'react-icons/fa';
 
 // Fix leaflet default markers
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -90,18 +91,18 @@ function getAllTrailsUrl(trailName: string | null): string {
 }
 
 // Function to get polyline style based on trail metadata
-function getTrailStyle(trail: Trail): L.PathOptions {
+function getTrailStyle(trail: any): L.PathOptions {
   // Color by difficulty
-  const color = getDifficultyColor(trail.difficulty);
+  const color = getDifficultyColor(trail.properties.difficulty);
   // Dashed for private
-  const dashArray = trail.privateAccess ? '8 8' : undefined;
+  const dashArray = trail.properties.privateAccess ? '8 8' : undefined;
   // Thicker for longer trails
   const minWeight = 3;
   const maxWeight = 8;
   const maxDistance = 20000; // 20km+ trails get max thickness
-  const weight = Math.min(maxWeight, minWeight + (trail.distanceTotal || 0) / maxDistance * (maxWeight - minWeight));
+  const weight = Math.min(maxWeight, minWeight + (trail.properties.distanceTotal || 0) / maxDistance * (maxWeight - minWeight));
   // Lower opacity for private
-  const opacity = trail.privateAccess ? 0.5 : 0.85;
+  const opacity = trail.properties.privateAccess ? 0.5 : 0.85;
   return { color, weight, opacity, dashArray };
 }
 
@@ -259,7 +260,7 @@ function ErrorBox({ message }: { message: string }) {
 }
 
 function AppRoutes() {
-  const [trails, setTrails] = useState<Trail[]>([]);
+  const [trails, setTrails] = useState<any[]>([]); // Use any[] for GeoJSON features
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -269,17 +270,10 @@ function AppRoutes() {
   const [zoomToTrail, setZoomToTrail] = useState<[number, number][]>([]);
   const [basemapIdx, setBasemapIdx] = useState(0);
   const [infoPanelOpen, setInfoPanelOpen] = useState(false);
-  const [googleOverview, setGoogleOverview] = useState<string | null>(null);
-  const [overviewLoading, setOverviewLoading] = useState(false);
-  const [trailImages, setTrailImages] = useState<string[]>([]);
-  const [imagesLoading, setImagesLoading] = useState(false);
-  const [currentImageIdx, setCurrentImageIdx] = useState(0);
-  const [googleOverviewLink, setGoogleOverviewLink] = useState<string | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const navigate = useNavigate();
   const params = useParams();
   const [isOffline, setIsOffline] = useReactState(!navigator.onLine);
-  const API_URL = process.env.REACT_APP_API_BASE_URL || '';
 
   useEffect(() => {
     const handleOnline = () => setIsOffline(false);
@@ -301,111 +295,87 @@ function AppRoutes() {
     return null;
   }
 
+  // Utility to merge trails with the same name
+  function mergeTrailsByName(features: any[]) {
+    const merged: { [name: string]: any } = {};
+    features.forEach(feature => {
+      const name = feature.properties.name || 'Unnamed';
+      if (!merged[name]) {
+        merged[name] = {
+          ...feature,
+          geometry: {
+            type: 'MultiLineString',
+            coordinates: [feature.geometry.coordinates]
+          }
+        };
+      } else {
+        merged[name].geometry.coordinates.push(feature.geometry.coordinates);
+        // Sum distance_total
+        merged[name].properties.distance_total =
+          (merged[name].properties.distance_total || 0) + (feature.properties.distance_total || 0);
+        // If you have a duration property, sum it as well (otherwise, duration is derived from distance)
+        if (merged[name].properties.duration && feature.properties.duration) {
+          merged[name].properties.duration += feature.properties.duration;
+        }
+      }
+    });
+    return Object.values(merged);
+  }
+
   // Load all trails on mount
   useEffect(() => {
-    fetchAllTrails();
+    fetch('/trails.geojson')
+      .then(res => res.json())
+      .then(data => {
+        if (data && Array.isArray(data.features)) {
+          const mergedFeatures = mergeTrailsByName(data.features);
+          setTrails(mergedFeatures);
+          console.log('First trail:', mergedFeatures[0]);
+          console.log('First trail coordinates:', mergedFeatures[0]?.geometry?.coordinates);
+        } else {
+          setTrails([]);
+          console.error('GeoJSON missing features array:', data);
+        }
+        setLoading(false); // <-- Ensure this is here
+      })
+      .catch(error => {
+        console.error('Failed to load trails.geojson:', error);
+        setLoading(false); // <-- And here
+      });
   }, []);
 
-  const fetchAllTrails = async () => {
-    setLoading(true);
-    try {
-      const response = await axios.get<Trail[]>(`${API_URL}/api/trails`);
-      if (Array.isArray(response.data)) {
-        setTrails(response.data);
-      } else {
-        setTrails([]);
-        console.error('API response is not an array:', response.data);
-      }
-    } catch (error) {
-      console.error('Failed to fetch trails:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSearch = async () => {
-    const sanitizedQuery = searchQuery.replace(/[^\w\s-]/g, '').trim();
+  const handleSearch = () => {
+    const sanitizedQuery = searchQuery.replace(/[^\w\s-]/g, '').trim().toLowerCase();
     if (!sanitizedQuery) {
-      fetchAllTrails();
+      fetch('/trails.geojson')
+        .then(res => res.json())
+        .then(data => {
+          if (data && Array.isArray(data.features)) {
+            setTrails(data.features);
+          } else {
+            setTrails([]);
+          }
+        });
       return;
     }
-    setLoading(true);
-    try {
-      const response = await axios.get<Trail[]>(`${API_URL}/api/trails/search?query=${encodeURIComponent(sanitizedQuery)}`);
-      if (Array.isArray(response.data)) {
-        setTrails(response.data);
-      } else {
-        setTrails([]);
-        console.error('API response is not an array:', response.data);
-      }
-    } catch (error) {
-      console.error('Failed to search trails:', error);
-    } finally {
-      setLoading(false);
-    }
+    setTrails(prev => prev.filter(f => (f.properties.name || '').toLowerCase().includes(sanitizedQuery)));
   };
 
   // Find the selected trail object
-  const selectedTrail = trails.find(t => t.id === selectedTrailId);
+  const selectedTrail = trails.find(f => f.properties.id === selectedTrailId);
 
-  // When a trail is selected, open the info panel and fetch Google overview
+  // When a trail is selected, open the info panel
   useEffect(() => {
     if (selectedTrailId !== null) {
       setInfoPanelOpen(true);
-      const trail = trails.find(t => t.id === selectedTrailId);
-      if (trail && trail.name) {
-        setOverviewLoading(true);
-        setGoogleOverview(null);
-        setGoogleOverviewLink(null);
-        const queries = [
-          trail.name + ' Glacier National Park',
-          trail.name
-        ];
-        let found = false;
-        (async () => {
-          for (const q of queries) {
-            console.log('Fetching Google overview for:', q);
-            try {
-              const res = await fetch(`${API_URL}/api/google-overview?query=${encodeURIComponent(q)}`);
-              const data = await res.json();
-              console.log('Google overview response:', data);
-              if (data.snippet) {
-                console.log('Full Google AI overview snippet:', data.snippet);
-                setGoogleOverview(data.snippet);
-                if (data.link) setGoogleOverviewLink(data.link);
-                found = true;
-                break;
-              }
-            } catch (err) {
-              console.error('Error fetching Google overview:', err);
-            }
-          }
-          if (!found) setGoogleOverview(null);
-          setOverviewLoading(false);
-        })();
-        // Fetch trail images
-        setImagesLoading(true);
-        setTrailImages([]);
-        setCurrentImageIdx(0);
-        fetch(`${API_URL}/api/trail-images?query=${encodeURIComponent(trail.name + ' Glacier National Park')}`)
-          .then(res => res.json())
-          .then(data => setTrailImages(data.images || []))
-          .catch(() => setTrailImages([]))
-          .finally(() => setImagesLoading(false));
-      } else {
-        setGoogleOverview(null);
-        setGoogleOverviewLink(null);
-        setTrailImages([]);
-        setCurrentImageIdx(0);
-      }
     }
   }, [selectedTrailId, trails]);
 
   useEffect(() => {
     if (params.trailId && trails.length > 0) {
-      const trail = trails.find(t => String(t.id) === params.trailId);
+      const trail = trails.find(f => String(f.properties.id) === params.trailId);
       if (trail) {
-        setSelectedTrailId(trail.id);
+        setSelectedTrailId(trail.properties.id);
         setInfoPanelOpen(true);
       }
     }
@@ -417,6 +387,41 @@ function AppRoutes() {
   if (error) {
     return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#181818' }}><ErrorBox message={error} /></div>;
   }
+
+  // Compute bounding box for all trails
+  const getTrailsBoundingBox = (trails: any[]) => {
+    let minLat = Infinity, minLng = Infinity, maxLat = -Infinity, maxLng = -Infinity;
+    trails.forEach(trail => {
+      if (trail.geometry) {
+        if (trail.geometry.type === 'MultiLineString') {
+          trail.geometry.coordinates.forEach((line: [number, number][]) => {
+            line.forEach(([lat, lng]) => {
+              if (lat < minLat) minLat = lat;
+              if (lat > maxLat) maxLat = lat;
+              if (lng < minLng) minLng = lng;
+              if (lng > maxLng) maxLng = lng;
+            });
+          });
+        } else if (trail.geometry.type === 'LineString') {
+          trail.geometry.coordinates.forEach(([lat, lng]: [number, number]) => {
+            if (lat < minLat) minLat = lat;
+            if (lat > maxLat) maxLat = lat;
+            if (lng < minLng) minLng = lng;
+            if (lng > maxLng) maxLng = lng;
+          });
+        }
+      }
+    });
+    if (
+      minLat === Infinity || minLng === Infinity ||
+      maxLat === -Infinity || maxLng === -Infinity
+    ) return null;
+    return [
+      [minLat, minLng],
+      [maxLat, maxLng]
+    ];
+  };
+  const trailsBoundingBox = getTrailsBoundingBox(trails);
 
   return (
     <div style={{ height: '100vh', width: '100vw', fontFamily: 'Arial, sans-serif', position: 'relative' }}>
@@ -474,7 +479,7 @@ function AppRoutes() {
                 boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
               }}
             />
-            <h1 className="h1-main">Glacier National Park Trails</h1>
+            <h1 className="h1-main" style={{ fontFamily: 'Dancing Script, Quicksand, Arial, sans-serif', fontSize: 36, fontWeight: 700, letterSpacing: 1 }}>{'Glacier National Park Trails'}</h1>
           </div>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -499,9 +504,9 @@ function AppRoutes() {
               onFocus={e => e.currentTarget.style.background = '#232526'}
               onBlur={e => e.currentTarget.style.background = 'rgba(40,40,40,0.95)'}
             />
-            <button onClick={handleSearch} className="btn-main" aria-label="Search for trails" tabIndex={0}>Search</button>
-            <button onClick={fetchAllTrails} className="btn-secondary" aria-label="Show all trails" tabIndex={0}>Show All</button>
-            <button onClick={() => setSidebarOpen(true)} className="btn-list" aria-label="Show trail list" tabIndex={0}>Show Trail List</button>
+            <button onClick={handleSearch} className="btn-main" aria-label="Search for trails" tabIndex={0} style={{ fontFamily: 'Quicksand, Arial, sans-serif', fontWeight: 600, letterSpacing: 0.5 }}>Search</button>
+            <button onClick={() => setSidebarOpen(true)} className="btn-secondary" aria-label="Show all trails" tabIndex={0} style={{ fontFamily: 'Quicksand, Arial, sans-serif', fontWeight: 600, letterSpacing: 0.5 }}>Show All</button>
+            <button onClick={() => setSidebarOpen(true)} className="btn-list" aria-label="Show trail list" tabIndex={0} style={{ fontFamily: 'Quicksand, Arial, sans-serif', fontWeight: 600, letterSpacing: 0.5 }}>Show Trail List</button>
           </div>
         </div>
 
@@ -548,17 +553,17 @@ function AppRoutes() {
             <div style={{ flex: 1, overflowY: 'auto', padding: '10px 0', background: 'transparent' }}>
               {trails.map((trail, idx) => (
                 <div
-                  key={trail.id}
+                  key={trail.properties.id}
                   onClick={() => {
-                    setSelectedTrailId(trail.id);
+                    setSelectedTrailId(trail.properties.id);
                     setSidebarOpen(false);
-                    setZoomToTrail(trail.points);
+                    setZoomToTrail(trail.geometry.coordinates);
                   }}
-                  onMouseEnter={() => setHoveredTrailId(trail.id)}
+                  onMouseEnter={() => setHoveredTrailId(trail.properties.id)}
                   onMouseLeave={() => setHoveredTrailId(null)}
                   style={{
                     padding: '12px 20px',
-                    background: selectedTrailId === trail.id ? 'rgba(30,144,255,0.12)' : hoveredTrailId === trail.id ? 'rgba(30,144,255,0.07)' : 'transparent',
+                    background: selectedTrailId === trail.properties.id ? 'rgba(30,144,255,0.12)' : hoveredTrailId === trail.properties.id ? 'rgba(30,144,255,0.07)' : 'transparent',
                     borderBottom: '1px solid #f0f0f0',
                     cursor: 'pointer',
                     transition: 'background 0.2s',
@@ -572,12 +577,12 @@ function AppRoutes() {
                     width: 12,
                     height: 12,
                     borderRadius: 6,
-                    background: getDifficultyColor(trail.difficulty),
+                    background: getDifficultyColor(trail.properties.difficulty),
                     marginRight: 10
                   }} />
-                  <span style={{ fontWeight: 600, fontSize: 15, flex: 1 }}>{safeDisplay(trail.name, `Trail ${idx + 1}`)}</span>
-                  <span style={{ fontSize: 13, color: '#888', marginLeft: 8 }}>{formatDistance(trail.distanceTotal || 0)}</span>
-                  <span style={{ fontSize: 13, color: '#888', marginLeft: 8 }}>{safeDisplay(trail.difficulty)}</span>
+                  <span style={{ fontWeight: 600, fontSize: 15, flex: 1 }}>{safeDisplay(trail.properties.name, `Trail ${idx + 1}`)}</span>
+                  <span style={{ fontSize: 13, color: '#888', marginLeft: 8 }}>{formatDistance(trail.properties.distanceTotal || 0)}</span>
+                  <span style={{ fontSize: 13, color: '#888', marginLeft: 8 }}>{safeDisplay(trail.properties.difficulty)}</span>
                 </div>
               ))}
             </div>
@@ -598,66 +603,71 @@ function AppRoutes() {
           {/* Always render the basemap control to avoid removeChild errors */}
           <BasemapControl basemapIdx={basemapIdx} setBasemapIdx={setBasemapIdx} onResetView={() => mapRef.current?.setView(GLACIER_CENTER, 11, { animate: true })} />
           {zoomToTrail.length > 0 && <ZoomToTrail points={zoomToTrail} />}
+          {trailsBoundingBox && (
+            <Rectangle
+              bounds={trailsBoundingBox as [[number, number], [number, number]]}
+              pathOptions={{ color: '#1976d2', weight: 3, fillOpacity: 0.08, fillColor: '#1976d2', dashArray: '8 8' }}
+            />
+          )}
           {trails.map((trail, index) => {
-            const isHovered = hoveredTrailId === trail.id || selectedTrailId === trail.id;
+            const isMulti = trail.geometry.type === 'MultiLineString';
+            const lines = isMulti ? trail.geometry.coordinates : [trail.geometry.coordinates];
+            const isHovered = hoveredTrailId === trail.properties.id || selectedTrailId === trail.properties.id;
             const style = isHovered
               ? { ...getTrailStyle(trail), color: '#1976d2', weight: 10, opacity: 1 }
               : getTrailStyle(trail);
-            return (
+            return lines.map((coords: [number, number][], i: number) => (
               <Polyline
-                key={trail.id}
-                positions={trail.points}
+                key={trail.properties.id + '-' + i}
+                positions={coords}
                 pathOptions={style}
                 eventHandlers={{
-                  mouseover: () => setHoveredTrailId(trail.id),
+                  mouseover: () => setHoveredTrailId(trail.properties.id),
                   mouseout: () => setHoveredTrailId(null),
                   click: () => {
-                    setSelectedTrailId(trail.id);
-                    setZoomToTrail(trail.points);
-                    navigate(`/trail/${trail.id}`);
+                    setSelectedTrailId(trail.properties.id);
+                    setZoomToTrail(coords);
+                    navigate(`/trail/${trail.properties.id}`);
                   }
                 }}
               />
-            );
+            ));
           })}
         </MapContainer>
+        <MapLegend />
           {infoPanelOpen && selectedTrail && (
-            <div className="info-panel-overlay" style={{
-              position: 'absolute',
+            <div style={{
+              position: 'fixed',
               top: 0,
-              right: 25,
-              height: '100%',
-              maxWidth: '625px',
-              width: 'calc(40% + 25px)',
-              minWidth: 365,
-              boxSizing: 'border-box',
-              background: 'rgba(0,0,0,0.8)',
-              color: '#fff',
-              boxShadow: '-2px 0 16px rgba(0,0,0,0.12)',
-              zIndex: 2001,
+              left: 0,
+              width: '100vw',
+              height: '100vh',
+              background: 'rgba(0,0,0,0.45)',
+              zIndex: 2000,
               display: 'flex',
-              flexDirection: 'column',
-              padding: 0,
-              overflowY: 'auto',
-              overflowX: 'hidden',
+              alignItems: 'center',
+              justifyContent: 'center',
+              animation: 'fadeIn 0.25s',
             }}>
-              {/* Solid header section matching navbar */}
-              <div className="info-panel-header" style={{
-                width: '100%',
-                background: 'linear-gradient(90deg, #181818 0%, #232526 100%)',
-                padding: '36px 36px 18px 36px',
+              <div style={{
+                background: 'rgba(30,30,30,0.98)',
+                borderRadius: 20,
+                boxShadow: '0 8px 40px rgba(0,0,0,0.35)',
+                padding: '36px 32px 28px 32px',
+                maxWidth: 440,
+                width: '95vw',
+                color: '#fff',
                 position: 'relative',
-                boxSizing: 'border-box',
-                borderTopRightRadius: 0,
-                borderTopLeftRadius: 0,
-                minHeight: 60,
-                zIndex: 2002
+                overflowY: 'auto',
+                maxHeight: '92vh',
+                fontFamily: 'Quicksand, Arial, sans-serif',
+                fontSize: 18,
+                letterSpacing: 0.1,
+                border: '1.5px solid #2d3a4a',
+                animation: 'scaleIn 0.25s',
               }}>
                 <button
-                  onClick={() => {
-                    setInfoPanelOpen(false);
-                    navigate('/');
-                  }}
+                  onClick={() => setInfoPanelOpen(false)}
                   style={{
                     position: 'absolute',
                     top: 18,
@@ -672,199 +682,112 @@ function AppRoutes() {
                     cursor: 'pointer',
                     fontWeight: 700,
                     zIndex: 3000,
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.10)'
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
+                    transition: 'background 0.2s',
                   }}
                   aria-label="Close info panel"
                   tabIndex={0}
+                  onMouseOver={e => e.currentTarget.style.background = '#1976d2'}
+                  onMouseOut={e => e.currentTarget.style.background = 'rgba(30,30,30,0.85)'}
                 >
                   ×
                 </button>
-                <h2 className="h2-panel">{safeDisplay(selectedTrail.name)}</h2>
-              </div>
-              {/* Rest of the info panel content, still semi-transparent */}
-              <div className="info-panel-content" style={{
-                flex: 1,
-                padding: '0 36px 24px 36px',
-                display: 'flex',
-                flexDirection: 'column',
-                overflowY: 'auto',
-                color: '#fff',
-                minHeight: 0,
-                maxHeight: 'calc(100vh - 120px)',
-              }}>
+                <h2 className="h2-panel" style={{ marginBottom: 18, fontSize: 28, fontWeight: 700, letterSpacing: 0.5, fontFamily: 'Dancing Script, Quicksand, Arial, sans-serif' }}>{safeDisplay(selectedTrail.properties.name)}</h2>
                 <div style={{ marginBottom: 18 }}>
-                  <span className="trail-tag" style={{ background: getDifficultyColor(selectedTrail.difficulty) }}>{safeDisplay(selectedTrail.difficulty)}</span>
-                  <span className="trail-type">{safeDisplay(selectedTrail.trailType)}</span>
+                  <span className="trail-tag" style={{ background: getDifficultyColor(selectedTrail.properties.difficulty), color: '#fff', borderRadius: 8, padding: '4px 14px', fontWeight: 600, fontSize: 16, marginRight: 10 }}>{safeDisplay(selectedTrail.properties.difficulty)}</span>
+                  <span className="trail-type" style={{ color: '#90caf9', fontWeight: 500, fontSize: 15 }}>{safeDisplay(selectedTrail.properties.trail_type)}</span>
                 </div>
-                <div style={{ fontSize: 16, lineHeight: 1.7, marginBottom: 18 }}>
-                  <div><strong>📏 Distance:</strong> {formatDistance(selectedTrail.distanceTotal || 0)}</div>
-                  <div><strong>⏱️ Approx. duration:</strong> {getHikingDuration(selectedTrail.distanceTotal || 0)}</div>
-                  <div><strong>🥾 Surface:</strong> {safeDisplay(selectedTrail.surface)}</div>
-                  {selectedTrail.bicycleAccessible && (
-                    <div style={{ color: '#27ae60' }}><strong>🚴 Bike Friendly</strong></div>
+                <div style={{ fontSize: 17, lineHeight: 1.7, marginBottom: 22, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div>{FaRoad({ style: { color: '#1976d2', marginRight: 8, verticalAlign: 'middle' } })}<strong>Distance:</strong> {selectedTrail.properties.distance_total ? formatDistance(selectedTrail.properties.distance_total) : 'Unknown'}</div>
+                  <div>{FaRegClock({ style: { color: '#43a047', marginRight: 8, verticalAlign: 'middle' } })}<strong>Approx. duration:</strong> {selectedTrail.properties.distance_total ? getHikingDuration(selectedTrail.properties.distance_total) : 'Unknown'}</div>
+                  <div>{FaTree({ style: { color: '#bdbdbd', marginRight: 8, verticalAlign: 'middle' } })}<strong>Surface:</strong> {safeDisplay(selectedTrail.properties.surface, 'Unknown')}</div>
+                  {selectedTrail.properties.bicycleAccessible && (
+                    <div style={{ color: '#27ae60' }}>{FaBicycle({ style: { marginRight: 8, verticalAlign: 'middle' } })}<strong>Bike Friendly</strong></div>
                   )}
-                  {selectedTrail.privateAccess && (
-                    <div style={{ color: '#e74c3c' }}><strong>🚫 Private Access</strong></div>
+                  {selectedTrail.properties.privateAccess && (
+                    <div style={{ color: '#e74c3c' }}>{FaLock({ style: { marginRight: 8, verticalAlign: 'middle' } })}<strong>Private Access</strong></div>
                   )}
                 </div>
-                <div style={{ marginBottom: 18, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ marginBottom: 18, display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <a
-                    href={getAllTrailsUrl(selectedTrail.name)}
+                    href={getAllTrailsUrl(selectedTrail.properties.name || '')}
                     target="_blank"
                     rel="noopener noreferrer"
+                    className="link-main"
                     style={{
-                      color: '#3498db',
-                      textDecoration: 'underline',
-                      fontWeight: 500,
-                      fontSize: 17
+                      background: '#1976d2',
+                      color: '#fff',
+                      borderRadius: 8,
+                      padding: '10px 18px',
+                      fontWeight: 600,
+                      fontSize: 16,
+                      textDecoration: 'none',
+                      marginBottom: 6,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      transition: 'background 0.2s',
                     }}
+                    onMouseOver={e => e.currentTarget.style.background = '#1565c0'}
+                    onMouseOut={e => e.currentTarget.style.background = '#1976d2'}
                   >
-                    More info on AllTrails ↗
+                    More info on AllTrails {FaExternalLinkAlt({ style: { fontSize: 15 } })}
                   </a>
-                  {selectedTrail.points.length > 0 && (
+                  {selectedTrail.geometry.coordinates.length > 0 && (
                     <a
-                      href={getGoogleMapsDirectionsUrl(selectedTrail.points[0][0], selectedTrail.points[0][1])}
+                      href={getGoogleMapsDirectionsUrl(selectedTrail.geometry.coordinates[0][1], selectedTrail.geometry.coordinates[0][0])}
                       target="_blank"
                       rel="noopener noreferrer"
+                      className="link-main"
                       style={{
-                        color: '#388e3c',
-                        textDecoration: 'underline',
-                        fontWeight: 500,
-                        fontSize: 17
+                        background: '#43a047',
+                        color: '#fff',
+                        borderRadius: 8,
+                        padding: '10px 18px',
+                        fontWeight: 600,
+                        fontSize: 16,
+                        textDecoration: 'none',
+                        marginBottom: 6,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        transition: 'background 0.2s',
                       }}
+                      onMouseOver={e => e.currentTarget.style.background = '#2e7d32'}
+                      onMouseOut={e => e.currentTarget.style.background = '#43a047'}
                     >
-                      Get Directions to Start ↗
+                      Get Directions to Start {FaDirections({ style: { fontSize: 17 } })}
                     </a>
                   )}
-                  {selectedTrail.points.length > 1 && (
+                  {selectedTrail.geometry.coordinates.length > 1 && (
                     <a
-                      href={getGoogleMapsDirectionsUrl(selectedTrail.points[selectedTrail.points.length-1][0], selectedTrail.points[selectedTrail.points.length-1][1])}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        color: '#d32f2f',
-                        textDecoration: 'underline',
-                        fontWeight: 500,
-                        fontSize: 17
-                      }}
-                    >
-                      Get Directions to End ↗
-                    </a>
-                  )}
-                </div>
-                {/* Google AI Overview placeholder */}
-                <div style={{
-                  background: 'rgba(20,20,20,0.8)',
-                  borderRadius: 12,
-                  padding: '24px 24px 20px 24px',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
-                  fontSize: 17,
-                  color: 'white',
-                  minHeight: 180,
-                  marginTop: 8,
-                  overflow: 'visible',
-                  lineHeight: 1.7,
-                  whiteSpace: 'pre-line',
-                  wordBreak: 'break-word',
-                  maxHeight: 'none',
-                  textOverflow: 'unset',
-                  display: 'block',
-                }}>
-                  <strong style={{ color: '#fff', fontWeight: 600 }}>Google AI Overview</strong>
-                  <div style={{
-                    marginTop: 8,
-                    color: '#e0e0e0',
-                    fontSize: 15,
-                    whiteSpace: 'pre-line',
-                    wordBreak: 'break-word',
-                    overflow: 'visible',
-                    textOverflow: 'unset',
-                    display: 'block',
-                    maxHeight: 'none',
-                  }}>
-                    {overviewLoading && <Spinner />}
-                    {!overviewLoading && googleOverview && <>
-                      <span>{googleOverview}</span>
-                      {googleOverviewLink && (
-                        <div style={{ marginTop: 10 }}>
-                          <a
-                            href={googleOverviewLink}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="link-main"
-                          >
-                            Read more ↗
-                          </a>
-                        </div>
+                      href={getGoogleMapsDirectionsUrl(
+                        selectedTrail.geometry.coordinates[selectedTrail.geometry.coordinates.length-1][1],
+                        selectedTrail.geometry.coordinates[selectedTrail.geometry.coordinates.length-1][0]
                       )}
-                    </>}
-                    {!overviewLoading && !googleOverview && <em>No overview found.</em>}
-                  </div>
-                  {/* Trail Images Carousel Section */}
-                  <div className="carousel-box" style={{
-                    marginTop: 32,
-                    marginBottom: 24,
-                    background: 'rgba(30,30,30,0.92)',
-                    borderRadius: 18,
-                    boxShadow: '0 4px 24px rgba(0,0,0,0.18)',
-                    color: '#fff',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    width: '90%',
-                    maxWidth: 340,
-                    minWidth: 180,
-                    minHeight: 120,
-                    padding: '16px 16px 16px 16px',
-                    marginLeft: 'auto',
-                    marginRight: 'auto',
-                  }}>
-                    <strong style={{ color: '#fff', fontWeight: 600, marginBottom: 16, fontSize: 20 }}>Trail Images</strong>
-                    {imagesLoading && <Spinner />}
-                    {!imagesLoading && trailImages.length === 0 && <div style={{ color: '#ccc', marginTop: 8 }}>No images found.</div>}
-                    {!imagesLoading && trailImages.length > 0 && (
-                      <div style={{ display: 'flex', alignItems: 'center', width: '100%', justifyContent: 'center', maxWidth: 320 }}>
-                        {/* Left arrow */}
-                        {trailImages.length > 1 && (
-                          <button
-                            onClick={() => setCurrentImageIdx((currentImageIdx - 1 + trailImages.length) % trailImages.length)}
-                            className="btn-arrow"
-                            aria-label="Previous image"
-                            tabIndex={0}
-                          >
-                            &#8592;
-                          </button>
-                        )}
-                        <img
-                          src={trailImages[currentImageIdx]}
-                          alt={`Trail ${currentImageIdx + 1}`}
-                          loading="lazy"
-                          style={{
-                            width: '100%',
-                            maxWidth: 320,
-                            height: 180,
-                            maxHeight: 180,
-                            objectFit: 'cover',
-                            borderRadius: 12,
-                            boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
-                            background: '#222',
-                            transition: 'box-shadow 0.2s',
-                          }}
-                        />
-                        {/* Right arrow */}
-                        {trailImages.length > 1 && (
-                          <button
-                            onClick={() => setCurrentImageIdx((currentImageIdx + 1) % trailImages.length)}
-                            className="btn-arrow"
-                            aria-label="Next image"
-                            tabIndex={0}
-                          >
-                            &#8594;
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="link-main"
+                      style={{
+                        background: '#e74c3c',
+                        color: '#fff',
+                        borderRadius: 8,
+                        padding: '10px 18px',
+                        fontWeight: 600,
+                        fontSize: 16,
+                        textDecoration: 'none',
+                        marginBottom: 6,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        transition: 'background 0.2s',
+                      }}
+                      onMouseOver={e => e.currentTarget.style.background = '#b71c1c'}
+                      onMouseOut={e => e.currentTarget.style.background = '#e74c3c'}
+                    >
+                      Get Directions to End {FaDirections({ style: { fontSize: 17 } })}
+                    </a>
+                  )}
                 </div>
               </div>
             </div>
@@ -893,6 +816,58 @@ function AppRoutes() {
   );
 }
 
+// Add legend component after MapContainer
+function MapLegend() {
+  return (
+    <div style={{
+      position: 'fixed',
+      bottom: 32,
+      right: 32,
+      background: 'rgba(30,30,30,0.92)',
+      color: '#fff',
+      borderRadius: 14,
+      boxShadow: '0 2px 12px rgba(0,0,0,0.18)',
+      padding: '20px 26px 18px 22px',
+      fontFamily: 'Quicksand, Arial, sans-serif',
+      fontSize: 16,
+      zIndex: 3000,
+      minWidth: 210,
+      maxWidth: 320,
+      lineHeight: 1.7,
+      letterSpacing: 0.1,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 10,
+    }}>
+      <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 6, letterSpacing: 0.5 }}>Legend</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ width: 32, height: 0, borderTop: '4px solid #1976d2', display: 'inline-block', marginRight: 6 }} />
+        <span>Trail</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ width: 32, height: 18, border: '3px dashed #1976d2', background: 'rgba(25,118,210,0.08)', borderRadius: 4, display: 'inline-block', marginRight: 6 }} />
+        <span>Bounding Box</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ width: 18, height: 18, background: getDifficultyColor('Easy'), borderRadius: 6, display: 'inline-block', marginRight: 6 }} />
+        <span>Easy</span>
+        <span style={{ width: 18, height: 18, background: getDifficultyColor('Medium'), borderRadius: 6, display: 'inline-block', margin: '0 6px' }} />
+        <span>Medium</span>
+        <span style={{ width: 18, height: 18, background: getDifficultyColor('Hard'), borderRadius: 6, display: 'inline-block', margin: '0 6px' }} />
+        <span>Hard</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {FaBicycle({ style: { color: '#27ae60', fontSize: 18, marginRight: 6, verticalAlign: 'middle' } })}
+        <span>Bike Friendly</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {FaLock({ style: { color: '#e74c3c', fontSize: 18, marginRight: 6, verticalAlign: 'middle' } })}
+        <span>Private Access</span>
+      </div>
+    </div>
+  );
+}
+
 
 export default function App() {
   return (
@@ -904,3 +879,18 @@ export default function App() {
     </Router>
   );
 }
+
+// Add global styles for animation and font
+const styleSheet = document.createElement('style');
+styleSheet.innerHTML = `
+@import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;600;700&family=Dancing+Script:wght@600&display=swap');
+@keyframes scaleIn {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+`;
+document.head.appendChild(styleSheet);
