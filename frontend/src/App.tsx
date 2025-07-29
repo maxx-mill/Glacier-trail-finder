@@ -871,7 +871,7 @@ function MapLegend() {
 
 export default function App() {
   return (
-    <Router basename="/glacier-trail-finder">
+    <Router basename={process.env.REACT_APP_BASE_URL}>
       <div className="App">
         <Routes>
           <Route path="/" element={<AppRoutes />} />
