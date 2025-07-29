@@ -137,7 +137,7 @@ function ZoomToTrail({ points }: { points: [number, number][] }) {
   return null;
 }
 
-const logoUrl = process.env.PUBLIC_URL + '/St_Mary_Lake.jpg';
+const logoUrl = process.env.PUBLIC_URL + './St_Mary_Lake.jpg';
 
 const BASEMAPS = [
   {
@@ -324,7 +324,7 @@ function AppRoutes() {
 
   // Load all trails on mount
   useEffect(() => {
-    fetch('/trails.geojson')
+    fetch('./trails.geojson')
       .then(res => res.json())
       .then(data => {
         if (data && Array.isArray(data.features)) {
@@ -347,7 +347,7 @@ function AppRoutes() {
   const handleSearch = () => {
     const sanitizedQuery = searchQuery.replace(/[^\w\s-]/g, '').trim().toLowerCase();
     if (!sanitizedQuery) {
-      fetch('/trails.geojson')
+      fetch('./trails.geojson')
         .then(res => res.json())
         .then(data => {
           if (data && Array.isArray(data.features)) {

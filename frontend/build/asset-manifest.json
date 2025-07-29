@@ -1,15 +1,15 @@
 {
   "files": {
-    "main.css": "/glacier-trail-finder/static/css/main.879cedf1.css",
-    "main.js": "/glacier-trail-finder/static/js/main.81ac5f9c.js",
-    "static/js/453.670e15c7.chunk.js": "/glacier-trail-finder/static/js/453.670e15c7.chunk.js",
-    "index.html": "/glacier-trail-finder/index.html",
-    "main.879cedf1.css.map": "/glacier-trail-finder/static/css/main.879cedf1.css.map",
-    "main.81ac5f9c.js.map": "/glacier-trail-finder/static/js/main.81ac5f9c.js.map",
-    "453.670e15c7.chunk.js.map": "/glacier-trail-finder/static/js/453.670e15c7.chunk.js.map"
+    "main.css": "https://maxx-mill.github.io/glacier-trail-finder/static/css/main.879cedf1.css",
+    "main.js": "https://maxx-mill.github.io/glacier-trail-finder/static/js/main.9b3ea331.js",
+    "static/js/453.670e15c7.chunk.js": "https://maxx-mill.github.io/glacier-trail-finder/static/js/453.670e15c7.chunk.js",
+    "index.html": "https://maxx-mill.github.io/glacier-trail-finder/index.html",
+    "main.879cedf1.css.map": "https://maxx-mill.github.io/glacier-trail-finder/static/css/main.879cedf1.css.map",
+    "main.9b3ea331.js.map": "https://maxx-mill.github.io/glacier-trail-finder/static/js/main.9b3ea331.js.map",
+    "453.670e15c7.chunk.js.map": "https://maxx-mill.github.io/glacier-trail-finder/static/js/453.670e15c7.chunk.js.map"
   },
   "entrypoints": [
     "static/css/main.879cedf1.css",
-    "static/js/main.81ac5f9c.js"
+    "static/js/main.9b3ea331.js"
   ]
 }
