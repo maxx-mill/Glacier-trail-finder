@@ -324,7 +324,7 @@ function AppRoutes() {
 
   // Load all trails on mount
   useEffect(() => {
-    fetch('./trails.geojson')
+    fetch(`${process.env.PUBLIC_URL}/trails.geojson`)
       .then(res => res.json())
       .then(data => {
         if (data && Array.isArray(data.features)) {
@@ -347,7 +347,7 @@ function AppRoutes() {
   const handleSearch = () => {
     const sanitizedQuery = searchQuery.replace(/[^\w\s-]/g, '').trim().toLowerCase();
     if (!sanitizedQuery) {
-      fetch('./trails.geojson')
+      fetch(`${process.env.PUBLIC_URL}/trails.geojson`)
         .then(res => res.json())
         .then(data => {
           if (data && Array.isArray(data.features)) {
@@ -872,10 +872,12 @@ function MapLegend() {
 export default function App() {
   return (
     <Router basename="/glacier-trail-finder">
-      <Routes>
-        <Route path="/" element={<AppRoutes />} />
-        <Route path="/trail/:trailId" element={<AppRoutes />} />
-      </Routes>
+      <div className="App">
+        <Routes>
+          <Route path="/" element={<AppRoutes />} />
+          <Route path="/trail/:trailId" element={<AppRoutes />} />
+        </Routes>
+      </div>
     </Router>
   );
 }
