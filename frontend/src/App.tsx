@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Polyline, Popup, useMap, Rectangle } from 'react-leaflet';
 import L, { control } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import './App.css';
+import './index.css';
 // Remove: import axios from 'axios';
 import { BrowserRouter as Router, Routes, Route, useParams, useNavigate } from 'react-router-dom';
 import { useState as useReactState } from 'react';
@@ -137,7 +139,7 @@ function ZoomToTrail({ points }: { points: [number, number][] }) {
   return null;
 }
 
-const logoUrl = process.env.PUBLIC_URL + './St_Mary_Lake.jpg';
+const logoUrl = process.env.PUBLIC_URL + '/St_Mary_Lake.jpg';
 
 const BASEMAPS = [
   {
@@ -260,6 +262,7 @@ function ErrorBox({ message }: { message: string }) {
 }
 
 function AppRoutes() {
+  console.log('AppRoutes component mounting...');
   const [trails, setTrails] = useState<any[]>([]); // Use any[] for GeoJSON features
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -325,8 +328,14 @@ function AppRoutes() {
   // Load all trails on mount
   useEffect(() => {
     fetch(`${process.env.PUBLIC_URL}/trails.geojson`)
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
+        return res.json();
+      })
       .then(data => {
+        console.log('Loaded GeoJSON data:', data);
         if (data && Array.isArray(data.features)) {
           const mergedFeatures = mergeTrailsByName(data.features);
           setTrails(mergedFeatures);
@@ -336,11 +345,12 @@ function AppRoutes() {
           setTrails([]);
           console.error('GeoJSON missing features array:', data);
         }
-        setLoading(false); // <-- Ensure this is here
+        setLoading(false);
       })
       .catch(error => {
         console.error('Failed to load trails.geojson:', error);
-        setLoading(false); // <-- And here
+        setError('Failed to load trail data. Please refresh the page.');
+        setLoading(false);
       });
   }, []);
 
@@ -348,13 +358,22 @@ function AppRoutes() {
     const sanitizedQuery = searchQuery.replace(/[^\w\s-]/g, '').trim().toLowerCase();
     if (!sanitizedQuery) {
       fetch(`${process.env.PUBLIC_URL}/trails.geojson`)
-        .then(res => res.json())
+        .then(res => {
+          if (!res.ok) {
+            throw new Error(`HTTP error! status: ${res.status}`);
+          }
+          return res.json();
+        })
         .then(data => {
           if (data && Array.isArray(data.features)) {
             setTrails(data.features);
           } else {
             setTrails([]);
           }
+        })
+        .catch(error => {
+          console.error('Failed to reload trails:', error);
+          setError('Failed to reload trail data.');
         });
       return;
     }
@@ -870,8 +889,9 @@ function MapLegend() {
 
 
 export default function App() {
+  console.log('App component mounting...');
   return (
-    <Router basename={process.env.REACT_APP_BASE_URL}>
+    <Router basename="/glacier-trail-finder">
       <div className="App">
         <Routes>
           <Route path="/" element={<AppRoutes />} />
