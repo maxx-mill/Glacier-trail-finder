@@ -837,52 +837,113 @@ function AppRoutes() {
 
 // Add legend component after MapContainer
 function MapLegend() {
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Hide legend completely on very small screens
+  if (isMobile && window.innerWidth <= 480) {
+    return null;
+  }
+
   return (
     <div style={{
       position: 'fixed',
-      bottom: 32,
-      right: 32,
+      bottom: isMobile ? 16 : 32,
+      right: isMobile ? 16 : 32,
       background: 'rgba(30,30,30,0.92)',
       color: '#fff',
-      borderRadius: 14,
+      borderRadius: isMobile ? 10 : 14,
       boxShadow: '0 2px 12px rgba(0,0,0,0.18)',
-      padding: '20px 26px 18px 22px',
+      padding: isMobile ? '12px 16px 10px 14px' : '20px 26px 18px 22px',
       fontFamily: 'Quicksand, Arial, sans-serif',
-      fontSize: 16,
+      fontSize: isMobile ? 14 : 16,
       zIndex: 3000,
-      minWidth: 210,
-      maxWidth: 320,
-      lineHeight: 1.7,
+      minWidth: isMobile ? 160 : 210,
+      maxWidth: isMobile ? 200 : 320,
+      lineHeight: 1.5,
       letterSpacing: 0.1,
       display: 'flex',
       flexDirection: 'column',
-      gap: 10,
+      gap: isMobile ? 6 : 10,
+      transition: 'all 0.3s ease',
     }}>
-      <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 6, letterSpacing: 0.5 }}>Legend</div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ width: 32, height: 0, borderTop: '4px solid #1976d2', display: 'inline-block', marginRight: 6 }} />
-        <span>Trail</span>
+      <div style={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'space-between',
+        marginBottom: isMobile ? 4 : 6 
+      }}>
+        <div style={{ fontWeight: 700, fontSize: isMobile ? 16 : 18, letterSpacing: 0.5 }}>
+          {isCollapsed ? 'Legend' : 'Legend'}
+        </div>
+        <button
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: '#fff',
+            fontSize: isMobile ? 16 : 18,
+            cursor: 'pointer',
+            padding: '2px',
+            borderRadius: '50%',
+            width: isMobile ? 24 : 28,
+            height: isMobile ? 24 : 28,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'background 0.2s',
+          }}
+          onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+          onMouseOut={e => e.currentTarget.style.background = 'none'}
+          aria-label={isCollapsed ? 'Expand legend' : 'Collapse legend'}
+        >
+          {isCollapsed ? '▼' : '▲'}
+        </button>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ width: 32, height: 18, border: '3px dashed #1976d2', background: 'rgba(25,118,210,0.08)', borderRadius: 4, display: 'inline-block', marginRight: 6 }} />
-        <span>Bounding Box</span>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ width: 18, height: 18, background: getDifficultyColor('Easy'), borderRadius: 6, display: 'inline-block', marginRight: 6 }} />
-        <span>Easy</span>
-        <span style={{ width: 18, height: 18, background: getDifficultyColor('Medium'), borderRadius: 6, display: 'inline-block', margin: '0 6px' }} />
-        <span>Medium</span>
-        <span style={{ width: 18, height: 18, background: getDifficultyColor('Hard'), borderRadius: 6, display: 'inline-block', margin: '0 6px' }} />
-        <span>Hard</span>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        {FaBicycle({ style: { color: '#27ae60', fontSize: 18, marginRight: 6, verticalAlign: 'middle' } })}
-        <span>Bike Friendly</span>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        {FaLock({ style: { color: '#e74c3c', fontSize: 18, marginRight: 6, verticalAlign: 'middle' } })}
-        <span>Private Access</span>
-      </div>
+      
+      {!isCollapsed && (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 10 }}>
+            <span style={{ width: isMobile ? 24 : 32, height: 0, borderTop: '3px solid #1976d2', display: 'inline-block', marginRight: 4 }} />
+            <span style={{ fontSize: isMobile ? 13 : 16 }}>Trail</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 10 }}>
+            <span style={{ width: isMobile ? 24 : 32, height: isMobile ? 12 : 18, border: '2px dashed #1976d2', background: 'rgba(25,118,210,0.08)', borderRadius: 3, display: 'inline-block', marginRight: 4 }} />
+            <span style={{ fontSize: isMobile ? 13 : 16 }}>Bounding Box</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 10, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ width: isMobile ? 12 : 18, height: isMobile ? 12 : 18, background: getDifficultyColor('Easy'), borderRadius: isMobile ? 4 : 6, display: 'inline-block', marginRight: 4 }} />
+              <span style={{ fontSize: isMobile ? 12 : 16 }}>Easy</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ width: isMobile ? 12 : 18, height: isMobile ? 12 : 18, background: getDifficultyColor('Medium'), borderRadius: isMobile ? 4 : 6, display: 'inline-block', marginRight: 4 }} />
+              <span style={{ fontSize: isMobile ? 12 : 16 }}>Medium</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ width: isMobile ? 12 : 18, height: isMobile ? 12 : 18, background: getDifficultyColor('Hard'), borderRadius: isMobile ? 4 : 6, display: 'inline-block', marginRight: 4 }} />
+              <span style={{ fontSize: isMobile ? 12 : 16 }}>Hard</span>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 10 }}>
+            {FaBicycle({ style: { color: '#27ae60', fontSize: isMobile ? 14 : 18, marginRight: 4, verticalAlign: 'middle' } })}
+            <span style={{ fontSize: isMobile ? 13 : 16 }}>Bike Friendly</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 10 }}>
+            {FaLock({ style: { color: '#e74c3c', fontSize: isMobile ? 14 : 18, marginRight: 4, verticalAlign: 'middle' } })}
+            <span style={{ fontSize: isMobile ? 13 : 16 }}>Private Access</span>
+          </div>
+        </>
+      )}
     </div>
   );
 }
